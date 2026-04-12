@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>مجسم الشقة VIP - التصميم المثالي</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Cairo', sans-serif;
+            background-color: #e0e4e8;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            touch-action: none;
+        }
+
+        /* حاوية التسميات */
+        #labels-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+
+        /* الزرار العائم للتبديل بين الليل والنهار */
+        #theme-btn {
+            position: fixed;
+            bottom: 25px;
+            right: 20px;
+            background: rgba(15, 20, 25, 0.85);
+            border: 2px solid #f1c40f;
+            color: #f1c40f;
+            width: 55px;
+            height: 55px;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 22px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+            cursor: pointer;
+            z-index: 100;
+            transition: transform 0.2s, background 0.3s;
+            -webkit-tap-highlight-color: transparent;
+            backdrop-filter: blur(5px);
+        }
+        #theme-btn:active { transform: scale(0.9); }
+
+        /* رسالة التأكيد تختفي بعد ثواني */
+        #toast {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(44, 62, 80, 0.95);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: bold;
+            z-index: 100;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            pointer-events: none;
+            border-bottom: 3px solid #f1c40f;
+            animation: fadeOut 5s forwards;
+            animation-delay: 3s;
+        }
+        @keyframes fadeOut {
+            to { opacity: 0; visibility: hidden; transform: translate(-50%, -20px); }
+        }
+
+        /* يافطات الغرف */
+        .room-label {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.65);
+            color: #ffffff;
+            padding: 5px 12px;
+            border-radius: 8px;
+            font-size: 11px;
+            font-weight: 700;
+            border-right: 3px solid #f1c40f;
+            pointer-events: none;
+            transform: translate(-50%, -50%);
+            backdrop-filter: blur(2px);
+            z-index: 5;
+            text-align: center;
+            transition: opacity 0.3s;
+        }
+        .room-label .dims {
+            display: block;
+            font-size: 9px;
+            color: #bdc3c7;
+            margin-top: 2px;
+            font-weight: 400;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    <div id="labels-container"></div>
+
+    <div id="toast">🏠 استخدم الماوس أو الأصابع لتدوير المجسم</div>
+
+    <button id="theme-btn" onclick="toggleTheme()">🌙</button>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        let isNight = false;
+        const roomLights = [];
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#e0e4e8');
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(-16, 35, 20);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = false;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x555566, 0.95);
+        hemiLight.position.set(0, 20, 0);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfffaec, 0.5);
+        dirLight.position.set(20, 30, 20);
+        scene.add(dirLight);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2.1;
+        controls.target.set(0, 0, -3);
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.5;
+        controls.addEventListener('start', () => { controls.autoRotate = false; });
+
+        const labelsData = [];
+        const labelsContainer = document.getElementById('labels-container');
+
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0xf0efe9, roughness: 0.3 });
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+        const doorMat = new THREE.MeshStandardMaterial({ color: 0x4a3b32, roughness: 0.7 });
+
+        const wallHeight = 1.6;
+
+        function addFloor(name, w, d, cx, cz) {
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.set(cx, 0, cz);
+            scene.add(floor);
+            const label = document.createElement('div');
+            label.className = 'room-label';
+            label.innerHTML = `${name}<span class="dims">${w}m × ${d}m</span>`;
+            labelsContainer.appendChild(label);
+            labelsData.push({ element: label, position: new THREE.Vector3(cx, wallHeight + 0.3, cz) });
+            const pointLight = new THREE.PointLight(0xffeaa7, 0, 8);
+            pointLight.position.set(cx, wallHeight - 0.2, cz);
+            scene.add(pointLight);
+            roomLights.push(pointLight);
+        }
+
+        function addWall(cx, cz, w, d) {
+            const wall = new THREE.Mesh(new THREE.BoxGeometry(w, wallHeight, d), wallMat);
+            wall.position.set(cx, wallHeight / 2, cz);
+            scene.add(wall);
+        }
+
+        function addClosedDoor(cx, cz, isHorizontal) {
+            const w = isHorizontal ? 0.9 : 0.12;
+            const d = isHorizontal ? 0.12 : 0.9;
+            const door = new THREE.Mesh(new THREE.BoxGeometry(w, 1.4, d), doorMat);
+            door.position.set(cx, 0.7, cz);
+            scene.add(door);
+        }
+
+        addFloor("الريسبشن", 6.9, 4.85, 0, 2.425);
+        addFloor("الطرقة", 1.0, 7.5, 0, -3.75);
+        addFloor("المطبخ", 2.96, 2.35, -1.98, -1.175);
+        addFloor("الحمام", 2.8, 1.8, -1.9, -3.4);
+        addFloor("غرفة ١", 3.5, 3.2, 2.25, -1.6);
+        addFloor("غرفة ٢", 4.15, 2.95, 2.575, -4.825);
+        addFloor("الماستر", 4.15, 3.0, 2.575, -7.95);
+
+        addWall(0, 4.85 + 0.075, 6.9, 0.15);
+        addWall(3.45 + 0.075, 2.425, 0.15, 4.85);
+        addWall(-3.45 - 0.075, 1.85, 0.15, 3.4);
+        addClosedDoor(-3.45 - 0.075, 4.0, false);
+        addWall(-3.45 - 0.075, 4.725, 0.15, 0.55);
+        addWall(-1.975, -0.075, 2.95, 0.15);
+        addWall(1.975, -0.075, 2.95, 0.15);
+        addWall(-0.575, -0.25, 0.15, 0.5);
+        addClosedDoor(-0.575, -0.95, false);
+        addWall(-0.575, -1.95, 0.15, 1.1);
+        addClosedDoor(-0.575, -2.95, false);
+        addWall(-0.575, -5.45, 0.15, 4.1);
+        addWall(0.575, -0.25, 0.15, 0.5);
+        addClosedDoor(0.575, -0.95, false);
+        addWall(0.575, -2.375, 0.15, 1.95);
+        addClosedDoor(0.575, -3.8, false);
+        addWall(0.575, -5.35, 0.15, 2.2);
+        addClosedDoor(0.575, -6.9, false);
+        addWall(0.575, -7.425, 0.15, 0.15);
+        addWall(0, -7.575, 1.0, 0.15);
+        addWall(-3.46 - 0.075, -1.175, 0.15, 2.35);
+        addWall(-1.98, -2.35 - 0.075, 2.96, 0.15);
+        addWall(-3.3 - 0.075, -3.4, 0.15, 1.8);
+        addWall(-1.9, -4.3 - 0.075, 2.8, 0.15);
+        addWall(4.0 + 0.075, -1.6, 0.15, 3.2);
+        addWall(2.25, -3.2 - 0.075, 3.5, 0.15);
+        addWall(4.65 + 0.075, -4.825, 0.15, 2.95);
+        addWall(4.325, -3.35 + 0.075, 0.65, 0.15);
+        addWall(2.575, -6.3 - 0.075, 4.15, 0.15);
+        addWall(4.65 + 0.075, -7.95, 0.15, 3.0);
+        addWall(2.575, -9.45 - 0.075, 4.15, 0.15);
+        addWall(0.5 - 0.075, -8.475, 0.15, 1.95);
+
+        const tvUnit = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 2.0), new THREE.MeshStandardMaterial({ color: 0x3e2723 }));
+        tvUnit.position.set(3.2, 0.2, 2.5); scene.add(tvUnit);
+        const tv = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.9, 1.5), new THREE.MeshStandardMaterial({ color: 0x000000 }));
+        tv.position.set(3.2, 0.9, 2.5); scene.add(tv);
+        const sMat = new THREE.MeshStandardMaterial({ color: 0x2c3e50 });
+        const sSeat = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.35, 2.0), sMat);
+        sSeat.position.set(1.0, 0.175, 2.5); scene.add(sSeat);
+        const sBack = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.45, 2.0), sMat);
+        sBack.position.set(0.65, 0.575, 2.5); scene.add(sBack);
+        const kCounter = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 2.0), new THREE.MeshStandardMaterial({ color: 0x7f8c8d }));
+        kCounter.position.set(-3.1, 0.45, -1.175); scene.add(kCounter);
+        const shower = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.5, 0.8), new THREE.MeshStandardMaterial({ color: 0x81ecec, transparent: true, opacity: 0.6 }));
+        shower.position.set(-2.8, 0.75, -3.8); scene.add(shower);
+
+        function addBed(x, z, c, isDouble, rot) {
+            const grp = new THREE.Group();
+            const w = isDouble ? 1.6 : 1.2;
+            const b = new THREE.Mesh(new THREE.BoxGeometry(w, 0.3, 2.0), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+            b.position.y = 0.15; grp.add(b);
+            const cv = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.1, 1.2), new THREE.MeshStandardMaterial({ color: c }));
+            cv.position.set(0, 0.26, 0.3); grp.add(cv);
+            grp.position.set(x, 0, z);
+            grp.rotation.y = rot;
+            scene.add(grp);
+        }
+
+        addBed(2.5, -1.6, 0x8e44ad, false, -Math.PI / 2);
+        addBed(1.5, -4.8, 0xe74c3c, false, Math.PI / 2);
+        addBed(3.5, -4.8, 0x2980b9, false, -Math.PI / 2);
+        addBed(2.5, -8.0, 0x16a085, true, -Math.PI / 2);
+
+        function updateLabels() {
+            labelsData.forEach(l => {
+                const vec = l.position.clone();
+                vec.project(camera);
+                const x = (vec.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (vec.y * -0.5 + 0.5) * window.innerHeight;
+                l.element.style.left = `${x}px`;
+                l.element.style.top = `${y}px`;
+                l.element.style.opacity = vec.z > 1 ? '0' : '1';
+            });
+        }
+
+        window.toggleTheme = function () {
+            isNight = !isNight;
+            const btn = document.getElementById('theme-btn');
+            if (isNight) {
+                scene.background = new THREE.Color('#0a0a0c');
+                hemiLight.intensity = 0.05;
+                dirLight.intensity = 0.05;
+                roomLights.forEach(l => l.intensity = 0.8);
+                btn.innerHTML = '☀️';
+            } else {
+                scene.background = new THREE.Color('#e0e4e8');
+                hemiLight.intensity = 0.95;
+                dirLight.intensity = 0.5;
+                roomLights.forEach(l => l.intensity = 0);
+                btn.innerHTML = '🌙';
+            }
+        };
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+            updateLabels();
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
